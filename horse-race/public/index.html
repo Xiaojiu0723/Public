@@ -62,11 +62,8 @@ const HORSES = ['🐎','🏇','🦄','🐴','🐎','🏇','🦄','🐴','🐎','
 let ws, pid = sessionStorage.getItem('pid'), hostId = null, S = null, myTaps = 0, lastState = '';
 
 // 房间号放在 URL 中，分享链接即进入同一房间
-let room = new URLSearchParams(location.search).get('room');
-if (!room) {
-  room = Math.random().toString(36).slice(2, 7);
-  history.replaceState(null, '', '?room=' + room);
-}
+// 没带房间号时，所有人进入同一个默认房间；想开多个房间可在网址后加 ?room=任意名字
+let room = new URLSearchParams(location.search).get('room') || 'main';
 $('name').value = localStorage.getItem('name') || '';
 
 function connect() {
