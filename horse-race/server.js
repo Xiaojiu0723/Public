@@ -131,13 +131,10 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     if (!room || !me) return;
-    me.ws = null;
-    if (room.state === 'lobby') {
-      room.players.delete(me.id);
-      if (room.hostId === me.id) room.hostId = room.players.keys().next().value || null;
-    }
-    const anyOnline = [...room.players.values()].some(p => p.ws);
-    if (!anyOnline) { clearInterval(room.timer); rooms.delete(room.id); return; }
+    // 退出即移除：无论在大厅、比赛还是结算中，断开连接的玩家立刻从房间清除
+    room.players.delete(me.id);
+    if (room.hostId === me.id) room.hostId = room.players.keys().next().value || null;
+    if (room.players.size === 0) { clearInterval(room.timer); rooms.delete(room.id); return; }
     broadcast(room);
   });
 });
