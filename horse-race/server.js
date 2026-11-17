@@ -9,7 +9,18 @@ const GAME_MS = 60 * 1000;
 const COUNTDOWN_MS = 3000;
 const MAX_TAPS_PER_SEC = 14; // 防作弊：每秒最多计入的点击数
 
-const server = http.createServer((req, res) => {
+const QRCode = require('qrcode');
+
+const server = http.createServer(async (req, res) => {
+  if (req.url.startsWith('/qr')) {
+    const u = new URL(req.url, 'http://x').searchParams.get('url') || '';
+    if (!/^https?:\/\//.test(u) || u.length > 300) { res.writeHead(400); return res.end('bad url'); }
+    try {
+      const svg = await QRCode.toString(u, { type: 'svg', margin: 1, width: 220 });
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+      return res.end(svg);
+    } catch { res.writeHead(500); return res.end('error'); }
+  }
   const file = path.join(__dirname, 'public', 'index.html');
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(500); return res.end('error'); }

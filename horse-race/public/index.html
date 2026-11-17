@@ -44,7 +44,9 @@ li.me{color:#ffeb3b;font-weight:bold}
 <div id="lobby" class="overlay hide">
   <h2>等待玩家加入 (<span id="num">0</span>/10)</h2>
   <p id="plist"></p>
-  <p>把当前页面分享给微信好友/群，即可一起玩</p>
+  <p>让朋友用手机相机扫码加入</p>
+  <img id="qr" width="180" height="180" style="background:#fff;border-radius:8px;padding:4px">
+  <script>document.getElementById('qr').src = '/qr?url=' + encodeURIComponent(location.href);</script>
   <button id="startBtn">开始比赛</button>
   <p id="waitHost"></p>
 </div>
