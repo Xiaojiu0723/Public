@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>疯狂赛马</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+body{margin:0;font-family:-apple-system,"PingFang SC",sans-serif;background:#2e7d32;color:#fff;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+#top{padding:10px 14px;display:flex;justify-content:space-between;align-items:center;background:rgba(0,0,0,.25);font-size:15px}
+#timer{font-size:28px;font-weight:bold}
+#track{flex:1;display:flex;flex-direction:column;padding:6px 0;overflow:hidden}
+.lane{flex:1;position:relative;border-bottom:1px dashed rgba(255,255,255,.35);min-height:0}
+.lane .horse{position:absolute;top:50%;left:0;transform:translateY(-50%);font-size:26px;transition:left .12s linear;white-space:nowrap}
+.lane .horse span{font-size:11px;background:rgba(0,0,0,.45);border-radius:8px;padding:1px 6px;margin-left:2px;vertical-align:middle}
+.lane.me{background:rgba(255,235,59,.2)}
+.finish{position:absolute;right:6px;top:0;bottom:0;width:6px;background:repeating-linear-gradient(#fff 0 8px,#000 8px 16px);opacity:.7}
+#tapzone{height:34vh;display:flex;align-items:center;justify-content:center;background:#e53935;font-size:34px;font-weight:bold;flex-direction:column}
+#tapzone:active{background:#ff5252}
+#tapzone small{font-size:15px;font-weight:normal;margin-top:6px}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center;z-index:9}
+.overlay.hide{display:none}
+input,button{font-size:18px;padding:12px 16px;border-radius:10px;border:0;margin:6px}
+button{background:#ffb300;font-weight:bold;color:#000}
+button:disabled{opacity:.4}
+#big{position:fixed;inset:0;display:none;align-items:center;justify-content:center;font-size:120px;font-weight:bold;z-index:8;pointer-events:none;text-shadow:0 0 20px #000}
+ol{text-align:left;padding-left:34px;font-size:20px;line-height:1.7;margin:10px 0;max-height:55vh;overflow:auto}
+li.me{color:#ffeb3b;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="top"><div>剩余时间</div><div id="timer">60</div><div id="cnt">0次</div></div>
+<div id="track"></div>
+<div id="tapzone">🏇 狂点这里！<small id="hint"></small></div>
+<div id="big"></div>
+
+<div id="login" class="overlay">
+  <h1>🏇 疯狂赛马</h1>
+  <p>最多10人 · 狂点屏幕 · 60秒决胜</p>
+  <input id="name" maxlength="8" placeholder="输入你的昵称">
+  <button id="joinBtn">进入赛场</button>
+</div>
+
+<div id="lobby" class="overlay hide">
+  <h2>等待玩家加入 (<span id="num">0</span>/10)</h2>
+  <p id="plist"></p>
+  <p>把当前页面分享给微信好友/群，即可一起玩</p>
+  <button id="startBtn">开始比赛</button>
+  <p id="waitHost"></p>
+</div>
+
+<div id="result" class="overlay hide">
+  <h2>🏆 比赛结束</h2>
+  <ol id="rank"></ol>
+  <button id="againBtn">再来一局</button>
+  <p id="waitHost2"></p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const HORSES = ['🐎','🏇','🦄','🐴','🐎','🏇','🦄','🐴','🐎','🏇'];
+let ws, pid = sessionStorage.getItem('pid'), hostId = null, S = null, myTaps = 0, lastState = '';
+
+// 房间号放在 URL 中，分享链接即进入同一房间
+let room = new URLSearchParams(location.search).get('room');
+if (!room) {
+  room = Math.random().toString(36).slice(2, 7);
+  history.replaceState(null, '', '?room=' + room);
+}
+$('name').value = localStorage.getItem('name') || '';
+
+function connect() {
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'join', room, name: $('name').value.trim() || '玩家', pid }));
+  ws.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'joined') { pid = m.pid; sessionStorage.setItem('pid', pid); $('login').classList.add('hide'); }
+    else if (m.type === 'error') { alert(m.msg); $('login').classList.remove('hide'); }
+    else if (m.type === 'state') render(m);
+  };
+  ws.onclose = () => { if (pid) setTimeout(connect, 1000); };
+}
+$('joinBtn').onclick = () => { localStorage.setItem('name', $('name').value); connect(); };
+
+function render(s) {
+  S = s; hostId = s.hostId;
+  const isHost = pid === hostId;
+  if (s.state !== lastState) {
+    if (s.state === 'countdown' || s.state === 'lobby') myTaps = 0;
+    lastState = s.state;
+  }
+  // 赛道
+  const track = $('track');
+  if (track.children.length !== s.players.length) {
+    track.innerHTML = '';
+    s.players.forEach(p => {
+      const l = document.createElement('div'); l.className = 'lane'; l.id = 'L' + p.id;
+      l.innerHTML = '<div class="finish"></div><div class="horse"></div>';
+      track.appendChild(l);
+    });
+  }
+  const max = Math.max(400, ...s.players.map(p => p.dist));
+  s.players.forEach((p, i) => {
+    const l = $('L' + p.id); if (!l) return;
+    l.classList.toggle('me', p.id === pid);
+    const h = l.querySelector('.horse');
+    h.innerHTML = HORSES[i % 10] + '<span>' + p.name + (p.online ? '' : '(掉线)') + '</span>';
+    const w = l.clientWidth - 110;
+    h.style.left = Math.max(0, (p.dist / max) * w) + 'px';
+  });
+
+  $('cnt').textContent = myTaps + '次';
+  $('timer').textContent = s.state === 'running' ? Math.ceil(s.remain / 1000) : (s.state === 'lobby' ? 60 : s.state === 'finished' ? 0 : 60);
+
+  // 大号倒计时
+  const big = $('big');
+  if (s.state === 'countdown') { big.style.display = 'flex'; big.textContent = Math.ceil(s.countdown / 1000) || 'GO'; }
+  else if (s.state === 'running' && s.remain > 59000) { big.style.display = 'flex'; big.textContent = 'GO!'; }
+  else big.style.display = 'none';
+
+  // 大厅
+  $('lobby').classList.toggle('hide', s.state !== 'lobby');
+  $('num').textContent = s.players.length;
+  $('plist').textContent = s.players.map(p => p.name).join('、');
+  $('startBtn').style.display = isHost ? '' : 'none';
+  $('waitHost').textContent = isHost ? '你是房主，人齐后点击开始' : '等待房主开始…';
+
+  // 结果
+  $('result').classList.toggle('hide', s.state !== 'finished');
+  if (s.state === 'finished' && s.result) {
+    const medal = ['🥇','🥈','🥉'];
+    $('rank').innerHTML = s.result.map(r =>
+      `<li class="${r.id === pid ? 'me' : ''}">${medal[r.rank - 1] || ''} 第${r.rank}名 ${r.name} — ${r.dist}步</li>`).join('');
+    $('againBtn').style.display = isHost ? '' : 'none';
+    $('waitHost2').textContent = isHost ? '' : '等待房主开启下一局…';
+  }
+}
+
+$('startBtn').onclick = () => ws.send(JSON.stringify({ type: 'start' }));
+$('againBtn').onclick = () => ws.send(JSON.stringify({ type: 'again' }));
+
+function tap(e) {
+  e.preventDefault();
+  if (!S || S.state !== 'running' || !ws || ws.readyState !== 1) return;
+  ws.send('{"type":"tap"}');
+  myTaps++; $('cnt').textContent = myTaps + '次';
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+// 整个赛道+按钮区域都可点击，支持多指
+document.addEventListener('touchstart', e => { if (e.target.closest('.overlay')) return; tap(e); }, { passive: false });
+$('tapzone').addEventListener('mousedown', tap);
+</script>
+</body>
+</html>
